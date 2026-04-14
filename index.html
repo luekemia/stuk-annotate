@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>轻量标注 - 本地版（By Kevin 同学）</title>
+  <link rel="stylesheet" href="style.css?v=20">
+</head>
+<body>
+  <div class="app">
+    <header class="topbar">
+      <div class="logo">轻量标注 <span class="badge">本地版（By Kevin 同学）</span></div>
+      <div class="actions">
+        <button class="btn btn-secondary" id="blankCanvas">空白画布</button>
+        <label class="btn btn-secondary">
+          <input type="file" id="upload" accept="image/*" hidden>
+          打开图片
+        </label>
+        <button class="btn btn-secondary" id="pasteImage">从剪贴板导入</button>
+        <label class="btn btn-secondary">
+          <input type="file" id="openProject" accept=".stukproj,.json" hidden>
+          打开项目
+        </label>
+        <div class="layer-dropdown" id="layerDropdown">
+          <button class="btn btn-secondary" id="layerToggle">图层</button>
+          <div class="layer-panel" id="layerPanel" style="display:none">
+            <div class="layer-list" id="layerList"></div>
+          </div>
+        </div>
+        <button class="btn btn-secondary" id="fitScreen">适应屏幕</button>
+        <button class="btn btn-secondary" id="saveProject">保存项目</button>
+        <button class="btn btn-primary" id="export">导出图片</button>
+        <button class="btn btn-primary" id="copyImage">复制到剪贴板</button>
+      </div>
+    </header>
+
+    <div class="polygon-toolbar" id="polygonToolbar" style="display:none">
+      <label class="poly-field">
+        <span>边数</span>
+        <input type="number" id="polySides" min="3" max="20" value="5">
+      </label>
+      <label class="poly-field">
+        <input type="checkbox" id="polyRegular" checked>
+        <span>正多边形</span>
+      </label>
+    </div>
+
+    <main class="workspace">
+      <aside class="sidebar left">
+        <div class="tool-section">
+          <div class="section-title">基础</div>
+          <div class="tools">
+            <button class="tool active" data-tool="select" title="选择 (V)">
+              <svg viewBox="0 0 24 24"><path d="M3 3l7.07 16.97 2.51-7.39 7.39-2.51L3 3z"/></svg>
+              <span>选择<br>(V)</span>
+            </button>
+            <button class="tool" data-tool="text" title="文字 (T)">
+              <svg viewBox="0 0 24 24"><path d="M5 4v3h5.5v12h3V7H19V4z"/></svg>
+              <span>文字<br>(T)</span>
+            </button>
+            <button class="tool" data-tool="rect" title="矩形 (R)">
+              <svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2" fill="none" stroke="currentColor" stroke-width="2"/></svg>
+              <span>矩形<br>(R)</span>
+            </button>
+            <button class="tool" data-tool="circle" title="圆形 (C)">
+              <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2"/></svg>
+              <span>圆形<br>(C)</span>
+            </button>
+            <button class="tool" data-tool="polygon" title="多边形 (O)">
+              <svg viewBox="0 0 24 24"><polygon points="12,3 21,9 18,20 6,20 3,9" fill="none" stroke="currentColor" stroke-width="2"/></svg>
+              <span>多边形<br>(O)</span>
+            </button>
+            <button class="tool" data-tool="angle" title="角度 (N)">
+              <svg viewBox="0 0 24 24">
+                <line x1="5" y1="19" x2="19" y2="19" stroke="currentColor" stroke-width="2"/>
+                <line x1="5" y1="19" x2="13" y2="7" stroke="currentColor" stroke-width="2"/>
+                <path d="M9 19 A 4 4 0 0 1 11 15" fill="none" stroke="currentColor" stroke-width="1.5"/>
+              </svg>
+              <span>角度<br>(N)</span>
+            </button>
+            <button class="tool" data-tool="line" title="直线 (L)">
+              <svg viewBox="0 0 24 24"><line x1="5" y1="19" x2="19" y2="5" stroke="currentColor" stroke-width="2"/></svg>
+              <span>直线<br>(L)</span>
+            </button>
+            <button class="tool" data-tool="arrow" title="箭头 (A)">
+              <svg viewBox="0 0 24 24"><path d="M5 19l9-9 4 4V5H10l4 4-9 9" fill="none" stroke="currentColor" stroke-width="2"/></svg>
+              <span>箭头<br>(A)</span>
+            </button>
+            <button class="tool" data-tool="pen" title="手写 (P)">
+              <svg viewBox="0 0 24 24"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a.996.996 0 000-1.41l-2.34-2.34a.996.996 0 00-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z" fill="currentColor"/></svg>
+              <span>手写<br>(P)</span>
+            </button>
+            <button class="tool" data-tool="mosaic" title="马赛克 (M)">
+              <svg viewBox="0 0 24 24"><rect x="4" y="4" width="7" height="7" fill="currentColor"/><rect x="13" y="4" width="7" height="7" fill="currentColor"/><rect x="4" y="13" width="7" height="7" fill="currentColor"/><rect x="13" y="13" width="7" height="7" fill="currentColor"/></svg>
+              <span>马赛克<br>(M)</span>
+            </button>
+            <button class="tool" data-tool="magnifier" title="放大镜 (G/B)" id="magnifierBtn">
+              <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7" fill="none" stroke="currentColor" stroke-width="2"/><path d="M20 20l-4.35-4.35" stroke="currentColor" stroke-width="2" fill="none"/></svg>
+              <span>放大镜<br>(G/B)</span>
+            </button>
+            <button class="tool" data-tool="picker" title="取色器 (I)">
+              <svg viewBox="0 0 24 24"><path d="M20.71 5.63l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-3.12 3.12-1.93-1.91-1.41 1.41 1.42 1.42L3 16.25V21h4.75l8.92-8.92 1.42 1.42 1.41-1.41-1.92-1.92 3.12-3.12c.4-.4.4-1.03.01-1.42zM5.25 19H5v-.25l8.48-8.48.25.25L5.25 19z" fill="currentColor"/></svg>
+              <span>取色器<br>(I)</span>
+            </button>
+          </div>
+        </div>
+        <div class="tool-section">
+          <div class="section-title">操作</div>
+          <div class="tools">
+            <button class="tool" id="undo" title="撤销 (Ctrl+Z)">
+              <svg viewBox="0 0 24 24"><path d="M12.5 8c-2.65 0-5.05.99-6.9 2.6L2 7v9h9l-3.62-3.62c1.39-1.16 3.16-1.88 5.12-1.88 3.54 0 6.55 2.31 7.6 5.5l2.37-.78C21.08 11.03 17.15 8 12.5 8z"/></svg>
+              <span>撤销<br>(Ctrl+Z)</span>
+            </button>
+            <button class="tool" id="redo" title="重做 (Ctrl+Y)">
+              <svg viewBox="0 0 24 24" style="transform:scaleX(-1)"><path d="M12.5 8c-2.65 0-5.05.99-6.9 2.6L2 7v9h9l-3.62-3.62c1.39-1.16 3.16-1.88 5.12-1.88 3.54 0 6.55 2.31 7.6 5.5l2.37-.78C21.08 11.03 17.15 8 12.5 8z"/></svg>
+              <span>重做<br>(Ctrl+Y)</span>
+            </button>
+            <button class="tool" id="clear" title="清空">
+              <svg viewBox="0 0 24 24"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
+              <span>清空</span>
+            </button>
+            <button class="tool" id="delete" title="删除选中 (Del)">
+              <svg viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+              <span>删除<br>(Del)</span>
+            </button>
+          </div>
+        </div>
+      </aside>
+
+      <div class="viewport" id="viewport">
+        <div class="canvas-wrapper" id="canvasWrapper">
+          <canvas id="canvas"></canvas>
+          <div class="empty-state" id="emptyState">
+            <div class="empty-icon">
+              <svg viewBox="0 0 24 24"><path d="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z"/></svg>
+            </div>
+            <p>点击上方「打开图片」开始标注</p>
+            <p class="hint">支持 JPG、PNG、WebP 格式 · 滚轮缩放 · 中键/空格拖拽平移</p>
+          </div>
+        </div>
+        <div class="statusbar">
+          <span id="statusSize">0 × 0</span>
+          <span id="statusScale">100%</span>
+          <span id="statusPos">0, 0</span>
+        </div>
+      </div>
+
+      <aside class="sidebar right">
+        <div class="panel-title">全局设置</div>
+        <div class="prop-group">
+          <label>标注颜色</label>
+          <div class="color-picker" id="globalColor">
+            <div class="color-option active" style="--c:#ff6b35" data-color="#ff6b35"></div>
+            <div class="color-option" style="--c:#f7c948" data-color="#f7c948"></div>
+            <div class="color-option" style="--c:#51cf66" data-color="#51cf66"></div>
+            <div class="color-option" style="--c:#339af0" data-color="#339af0"></div>
+            <div class="color-option" style="--c:#be4bdb" data-color="#be4bdb"></div>
+            <div class="color-option" style="--c:#212529" data-color="#212529"></div>
+          </div>
+        </div>
+        <div class="prop-group">
+          <label>线宽 / 字号</label>
+          <input type="range" id="strokeWidth" min="1" max="40" value="3">
+          <div class="range-value" id="strokeValue">3px</div>
+        </div>
+
+        <div class="divider"></div>
+        <div class="panel-title">选中属性</div>
+        <div class="prop-group" id="selGroup" style="display:none">
+          <label>类型</label>
+          <div class="info" id="selType">-</div>
+        </div>
+        <div class="prop-group" id="selColorGroup" style="display:none">
+          <label>颜色</label>
+          <div class="color-picker" id="selColor"></div>
+        </div>
+        <div class="prop-group" id="selWidthGroup" style="display:none">
+          <label>粗细</label>
+          <input type="range" id="selWidth" min="1" max="40">
+          <div class="range-value" id="selWidthValue">-</div>
+        </div>
+        <div class="prop-group" id="selTextGroup" style="display:none">
+          <label>文字内容</label>
+          <input type="text" id="selText">
+        </div>
+        <div class="prop-group" id="selFillGroup" style="display:none">
+          <label class="flex-label">
+            <span>填充</span>
+            <input type="checkbox" id="selFill">
+          </label>
+        </div>
+        <div class="prop-group" id="selDashTypeGroup" style="display:none">
+          <label>线型</label>
+          <div class="dash-type-picker" id="selDashType"></div>
+        </div>
+        <div class="prop-group" id="selDashTightGroup" style="display:none">
+          <label>虚线紧密</label>
+          <input type="range" id="selDashTight" min="1" max="10" value="5">
+          <div class="range-value" id="selDashTightValue">5</div>
+        </div>
+        <div class="prop-group" id="zoomGroup" style="display:none">
+          <label>放大倍数</label>
+          <input type="range" id="zoomInput" min="1" max="8" step="0.1" value="2">
+          <div class="range-value" id="zoomValue">2x</div>
+        </div>
+        <div class="prop-group" id="selMosaicBlurGroup" style="display:none">
+          <label>模糊程度</label>
+          <input type="range" id="selMosaicBlur" min="4" max="40" value="12">
+          <div class="range-value" id="selMosaicBlurValue">12</div>
+        </div>
+        <div class="prop-group" id="selPolygonGroup" style="display:none">
+          <label>边数</label>
+          <input type="number" id="selPolySides" min="3" max="20" value="5">
+          <label class="flex-label" style="margin-top:8px">
+            <span>正多边形</span>
+            <input type="checkbox" id="selPolyRegular">
+          </label>
+        </div>
+        <div class="prop-group" id="selAngleGroup" style="display:none">
+          <label>角度 (°)</label>
+          <input type="number" id="selAngle" min="1" max="359" value="90">
+        </div>
+        <div class="prop-group" id="selAngleFontGroup" style="display:none">
+          <label>字号</label>
+          <input type="range" id="selAngleFont" min="8" max="48" value="20">
+          <div class="range-value" id="selAngleFontValue">20px</div>
+        </div>
+        <div class="prop-group" id="selVertexAngleGroup" style="display:none">
+          <label>顶点角度 (°)</label>
+          <input type="number" id="selVertexAngle" min="1" max="359" value="108">
+        </div>
+        <div class="prop-group" id="noSelGroup">
+          <div class="info">未选中元素</div>
+        </div>
+      </aside>
+    </main>
+  </div>
+
+  <!-- 文字编辑浮层 -->
+  <div class="text-edit-overlay" id="textOverlay" style="display:none">
+    <textarea id="textEditor" rows="1"></textarea>
+    <div class="text-edit-hint">按 Enter 确认，Esc 取消</div>
+  </div>
+
+  <!-- 取色器放大镜预览 -->
+  <div class="picker-preview" id="pickerPreview" style="display:none">
+    <canvas id="pickerCanvas" width="80" height="80"></canvas>
+    <div class="picker-crosshair"></div>
+  </div>
+
+  <!-- 放大镜类型选择浮层 -->
+  <div class="tool-overlay" id="magnifierOverlay" style="display:none">
+    <div class="tool-overlay-panel">
+      <div class="tool-overlay-title">选择放大镜类型</div>
+      <div class="tool-overlay-options">
+        <div class="tool-overlay-option" data-subtool="magnifier">
+          <div class="tool-overlay-icon">
+            <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7" fill="none" stroke="currentColor" stroke-width="2"/><path d="M20 20l-4.35-4.35" stroke="currentColor" stroke-width="2" fill="none"/></svg>
+          </div>
+          <div class="tool-overlay-label">圆形放大镜</div>
+          <div class="tool-overlay-hint">快捷键 G</div>
+        </div>
+        <div class="tool-overlay-option" data-subtool="stripMagnifier">
+          <div class="tool-overlay-icon">
+            <svg viewBox="0 0 24 24"><rect x="3" y="8" width="18" height="8" rx="1" fill="none" stroke="currentColor" stroke-width="2"/><line x1="7" y1="12" x2="17" y2="12" stroke="currentColor" stroke-width="2"/></svg>
+          </div>
+          <div class="tool-overlay-label">长条放大镜</div>
+          <div class="tool-overlay-hint">快捷键 B</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 保存项目浮层 -->
+  <div class="tool-overlay" id="saveProjectOverlay" style="display:none">
+    <div class="tool-overlay-panel" style="min-width:320px">
+      <div class="tool-overlay-title">保存项目</div>
+      <div class="prop-group" style="margin-bottom:16px">
+        <label style="margin-bottom:6px">文件名</label>
+        <input type="text" id="saveProjectName" style="font-size:14px">
+      </div>
+      <div class="save-project-actions" id="saveProjectActions">
+        <button class="btn btn-secondary" id="saveProjectCancel">取消</button>
+        <button class="btn btn-primary" id="saveProjectOverwrite" style="display:none">覆盖</button>
+        <button class="btn btn-primary" id="saveProjectConfirm">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js?v=20"></script>
+</body>
+</html>
