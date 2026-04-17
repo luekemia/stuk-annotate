@@ -86,6 +86,12 @@
   const saveProjectOverwrite = document.getElementById('saveProjectOverwrite');
   const saveProjectConfirm = document.getElementById('saveProjectConfirm');
 
+  // Unsaved confirm overlay
+  const unsavedConfirmOverlay = document.getElementById('unsavedConfirmOverlay');
+  const unsavedCancel = document.getElementById('unsavedCancel');
+  const unsavedDiscard = document.getElementById('unsavedDiscard');
+  const unsavedSave = document.getElementById('unsavedSave');
+
   // Picker preview
   const pickerPreview = document.getElementById('pickerPreview');
   const pickerCanvas = document.getElementById('pickerCanvas');
@@ -136,6 +142,9 @@
     tempShape: null,
     spaceDown: false,
     draggedHandle: null,
+    changeVersion: 0,
+    savedVersion: 0,
+    pendingAfterSave: null,
   };
 
   const COLORS = ['#ff0000', '#ff8800', '#ffcc00', '#00cc44', '#00cccc', '#aa00ff', '#212529', '#ffffff'];
@@ -348,6 +357,7 @@
   }
 
   function recordState() {
+    state.changeVersion++;
     state.undoStack.push({
       shapes: deepCloneShapes(),
       selectedId: state.selectedId,
@@ -1192,6 +1202,8 @@
     state.selectedId = null;
     state.selectedIds = [];
     state.tempShape = null;
+    state.changeVersion = 0;
+    state.savedVersion = 0;
     if (color != null) state.color = color;
     if (width != null) state.width = width;
     clearMosaicCaches();
@@ -1228,7 +1240,9 @@
     img.src = c.toDataURL();
   }
 
-  blankCanvasBtn.addEventListener('click', initBlankCanvas);
+  blankCanvasBtn.addEventListener('click', () => {
+    showUnsavedConfirm(initBlankCanvas);
+  });
 
   // ===== Image loading =====
   upload.addEventListener('change', e => {
@@ -1237,7 +1251,7 @@
     const reader = new FileReader();
     reader.onload = evt => {
       const img = new Image();
-      img.onload = () => initProject(img);
+      img.onload = () => showUnsavedConfirm(() => initProject(img));
       img.src = evt.target.result;
     };
     reader.readAsDataURL(file);
@@ -1420,6 +1434,7 @@
       if (startInHandle) opts.startIn = startInHandle;
       const handle = await window.showSaveFilePicker(opts);
       await writeToHandle(handle);
+      state.projectFileHandle = handle;
       return handle.name;
     } catch (err) {
       if (err.name === 'AbortError') return null; // user cancelled
@@ -1451,6 +1466,7 @@
   saveProjectCancel.addEventListener('click', (e) => {
     e.stopPropagation();
     closeSaveProjectOverlay();
+    state.pendingAfterSave = null;
   });
 
   saveProjectOverwrite.addEventListener('click', async (e) => {
@@ -1459,7 +1475,9 @@
     if (state.projectFileHandle) {
       try {
         await writeToHandle(state.projectFileHandle);
+        state.savedVersion = state.changeVersion;
         closeSaveProjectOverlay();
+        if (state.pendingAfterSave) { state.pendingAfterSave(); state.pendingAfterSave = null; }
       } catch (err) {
         alert('保存失败：' + err.message);
       }
@@ -1468,10 +1486,14 @@
     const savedName = await trySaveWithFilePicker(state.currentProjectName);
     if (savedName === false) {
       doDownloadProject(state.currentProjectName);
+      state.savedVersion = state.changeVersion;
       closeSaveProjectOverlay();
+      if (state.pendingAfterSave) { state.pendingAfterSave(); state.pendingAfterSave = null; }
     } else if (savedName) {
       state.currentProjectName = savedName;
+      state.savedVersion = state.changeVersion;
       closeSaveProjectOverlay();
+      if (state.pendingAfterSave) { state.pendingAfterSave(); state.pendingAfterSave = null; }
     }
   });
 
@@ -1484,15 +1506,20 @@
     if (savedName === false) {
       doDownloadProject(name);
       state.currentProjectName = name;
+      state.savedVersion = state.changeVersion;
       closeSaveProjectOverlay();
+      if (state.pendingAfterSave) { state.pendingAfterSave(); state.pendingAfterSave = null; }
     } else if (savedName) {
       state.currentProjectName = savedName;
+      state.savedVersion = state.changeVersion;
       closeSaveProjectOverlay();
+      if (state.pendingAfterSave) { state.pendingAfterSave(); state.pendingAfterSave = null; }
     }
   });
 
   saveProjectOverlay.addEventListener('click', () => {
     closeSaveProjectOverlay();
+    state.pendingAfterSave = null;
   });
 
   saveProjectOverlay.querySelector('.tool-overlay-panel').addEventListener('click', (e) => {
@@ -1506,6 +1533,88 @@
     } else if (e.key === 'Escape') {
       closeSaveProjectOverlay();
     }
+  });
+
+  // ===== Unsaved changes confirm =====
+  function isDirty() {
+    return state.changeVersion !== state.savedVersion;
+  }
+
+  function hasContent() {
+    return state.bgImage && (state.shapes.length > 0 || state.isBlankCanvas);
+  }
+
+  let pendingAction = null;
+
+  function showUnsavedConfirm(action) {
+    if (!isDirty() || !hasContent()) {
+      action();
+      return;
+    }
+    pendingAction = action;
+    unsavedConfirmOverlay.style.display = 'flex';
+  }
+
+  function closeUnsavedConfirm() {
+    unsavedConfirmOverlay.style.display = 'none';
+    pendingAction = null;
+  }
+
+  unsavedCancel.addEventListener('click', (e) => {
+    e.stopPropagation();
+    closeUnsavedConfirm();
+  });
+
+  unsavedDiscard.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (pendingAction) pendingAction();
+    closeUnsavedConfirm();
+  });
+
+  unsavedSave.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    if (!pendingAction) return;
+    const action = pendingAction;
+    // Reuse save overlay flow: if has file handle, overwrite; else open save overlay
+    if (state.projectFileHandle) {
+      try {
+        await writeToHandle(state.projectFileHandle);
+        state.savedVersion = state.changeVersion;
+        action();
+        closeUnsavedConfirm();
+      } catch (err) {
+        alert('保存失败：' + err.message);
+      }
+    } else if (state.currentProjectName) {
+      const savedName = await trySaveWithFilePicker(state.currentProjectName);
+      if (savedName === false) {
+        doDownloadProject(state.currentProjectName);
+        state.savedVersion = state.changeVersion;
+        action();
+        closeUnsavedConfirm();
+      } else if (savedName) {
+        state.currentProjectName = savedName;
+        state.savedVersion = state.changeVersion;
+        action();
+        closeUnsavedConfirm();
+      }
+    } else {
+      // No prior name: open save overlay, chain action via pendingAfterSave
+      state.pendingAfterSave = () => {
+        action();
+        closeUnsavedConfirm();
+      };
+      closeUnsavedConfirm();
+      openSaveProjectOverlay();
+    }
+  });
+
+  unsavedConfirmOverlay.addEventListener('click', () => {
+    closeUnsavedConfirm();
+  });
+
+  unsavedConfirmOverlay.querySelector('.tool-overlay-panel').addEventListener('click', (e) => {
+    e.stopPropagation();
   });
 
   function loadProjectFromFile(file, fileName, fileHandle = null) {
@@ -1555,7 +1664,7 @@
           }]
         });
         const file = await handle.getFile();
-        loadProjectFromFile(file, file.name, handle);
+        showUnsavedConfirm(() => loadProjectFromFile(file, file.name, handle));
       } catch (err) {
         if (err.name !== 'AbortError') {
           alert('打开项目失败：' + err.message);
@@ -1569,7 +1678,7 @@
   openProjectInput.addEventListener('change', e => {
     const file = e.target.files[0];
     if (!file) return;
-    loadProjectFromFile(file, file.name, null);
+    showUnsavedConfirm(() => loadProjectFromFile(file, file.name, null));
   });
 
   // ===== Drawing =====

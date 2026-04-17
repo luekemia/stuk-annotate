@@ -285,6 +285,21 @@
     </div>
   </div>
 
+  <!-- 未保存确认浮层 -->
+  <div class="tool-overlay" id="unsavedConfirmOverlay" style="display:none">
+    <div class="tool-overlay-panel" style="min-width:300px">
+      <div class="tool-overlay-title">未保存的更改</div>
+      <div style="font-size:13px;color:var(--text-secondary);margin-bottom:16px;text-align:center">
+        当前项目有未保存的更改，是否保存？
+      </div>
+      <div class="save-project-actions">
+        <button class="btn btn-secondary" id="unsavedCancel">取消</button>
+        <button class="btn btn-secondary" id="unsavedDiscard">不保存</button>
+        <button class="btn btn-primary" id="unsavedSave">保存</button>
+      </div>
+    </div>
+  </div>
+
   <script src="app.js?v=20"></script>
 </body>
 </html>
