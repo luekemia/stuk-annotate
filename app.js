@@ -117,11 +117,15 @@
     defaultZoom: 2,
     recentColor: null,
     selectedId: null,
+    selectedIds: [],
     isDrawing: false,
     isPanning: false,
     isDragging: false,
     isResizing: false,
     isRotating: false,
+    isMarquee: false,
+    marqueeStart: null,
+    marqueeEnd: null,
     resizeHandle: null,
     dragStart: null,      // mouse pos at drag start (screen)
     dragOrigin: null,     // copy of shape at drag start
@@ -343,7 +347,8 @@
   function recordState() {
     state.undoStack.push({
       shapes: deepCloneShapes(),
-      selectedId: state.selectedId
+      selectedId: state.selectedId,
+      selectedIds: state.selectedIds.slice()
     });
     if (state.undoStack.length > 100) state.undoStack.shift();
     state.redoStack = [];
@@ -352,10 +357,11 @@
 
   function undo() {
     if (!state.undoStack.length) return;
-    state.redoStack.push({ shapes: deepCloneShapes(), selectedId: state.selectedId });
+    state.redoStack.push({ shapes: deepCloneShapes(), selectedId: state.selectedId, selectedIds: state.selectedIds.slice() });
     const snap = state.undoStack.pop();
     state.shapes = snap.shapes;
     state.selectedId = snap.selectedId;
+    state.selectedIds = snap.selectedIds ? snap.selectedIds.slice() : (snap.selectedId ? [snap.selectedId] : []);
     updateUndoRedoUI();
     updateSelectionUI();
     renderLayerList();
@@ -365,10 +371,11 @@
 
   function redo() {
     if (!state.redoStack.length) return;
-    state.undoStack.push({ shapes: deepCloneShapes(), selectedId: state.selectedId });
+    state.undoStack.push({ shapes: deepCloneShapes(), selectedId: state.selectedId, selectedIds: state.selectedIds.slice() });
     const snap = state.redoStack.pop();
     state.shapes = snap.shapes;
     state.selectedId = snap.selectedId;
+    state.selectedIds = snap.selectedIds ? snap.selectedIds.slice() : (snap.selectedId ? [snap.selectedId] : []);
     updateUndoRedoUI();
     updateSelectionUI();
     renderLayerList();
@@ -473,7 +480,7 @@
 
   function updatePolygonToolbar() {
     const s = getSelected();
-    const show = state.tool === 'polygon' || (s && s.type === 'polygon');
+    const show = state.tool === 'polygon' || (state.selectedIds.length === 1 && s && s.type === 'polygon');
     polygonToolbar.style.display = show ? 'flex' : 'none';
     if (show && s && s.type === 'polygon') {
       polySidesInput.value = s.sides || 5;
@@ -517,6 +524,7 @@
     recordState();
     state.shapes = [];
     state.selectedId = null;
+    state.selectedIds = [];
     updateSelectionUI();
     renderLayerList();
     clearMosaicCaches();
@@ -526,10 +534,11 @@
   fitScreenBtn.addEventListener('click', fitToScreen);
 
   function deleteSelected() {
-    if (!state.selectedId) return;
+    if (!state.selectedIds.length) return;
     recordState();
-    state.shapes = state.shapes.filter(s => s.id !== state.selectedId);
+    state.shapes = state.shapes.filter(s => !state.selectedIds.includes(s.id));
     state.selectedId = null;
+    state.selectedIds = [];
     state.draggedHandle = null;
     updateSelectionUI();
     renderLayerList();
@@ -584,14 +593,14 @@
 
   function setGlobalColor(c) {
     state.color = c;
-    if (state.selectedId) {
-      const s = state.shapes.find(x => x.id === state.selectedId);
-      if (s) {
-        recordState();
-        s.color = c;
-        draw();
-        updateSelectionUI();
-      }
+    if (state.selectedIds.length) {
+      recordState();
+      state.selectedIds.forEach(id => {
+        const s = state.shapes.find(x => x.id === id);
+        if (s) s.color = c;
+      });
+      draw();
+      updateSelectionUI();
     }
   }
 
@@ -601,93 +610,94 @@
   strokeWidthInput.addEventListener('input', () => {
     state.width = parseInt(strokeWidthInput.value, 10);
     strokeValue.textContent = state.width + 'px';
-    if (state.selectedId) {
-      const s = state.shapes.find(x => x.id === state.selectedId);
-      if (s) {
-        recordState();
-        s.width = state.width;
-        draw();
-        updateSelectionUI();
-      }
+    if (state.selectedIds.length) {
+      state.selectedIds.forEach(id => {
+        const s = state.shapes.find(x => x.id === id);
+        if (s) s.width = state.width;
+      });
+      draw();
+      updateSelectionUI();
     }
   });
 
   // ===== Selection properties =====
   selWidthInput.addEventListener('input', () => {
-    const s = getSelected();
-    if (!s) return;
-    s.width = parseInt(selWidthInput.value, 10);
-    selWidthValue.textContent = s.width + 'px';
+    const v = parseInt(selWidthInput.value, 10);
+    selWidthValue.textContent = v + 'px';
+    state.selectedIds.forEach(id => {
+      const s = state.shapes.find(x => x.id === id);
+      if (s) s.width = v;
+    });
     draw();
   });
   selWidthInput.addEventListener('change', () => {
-    // record on final change
-    // We already mutated, but undo should restore previous. Since we didn't record before change,
-    // we can't undo the slider drag perfectly. For simplicity, record before next interaction.
-    // Better: record on mousedown of slider. Input range doesn't fire mousedown easily cross-browser.
-    // We'll accept that slider changes are atomic enough.
+    if (state.selectedIds.length) recordState();
   });
 
   selTextInput.addEventListener('input', () => {
-    const s = getSelected();
-    if (!s || s.type !== 'text') return;
-    s.text = selTextInput.value;
-    draw();
+    if (state.selectedIds.length === 1) {
+      const s = getSelected();
+      if (s && s.type === 'text') {
+        s.text = selTextInput.value;
+        draw();
+      }
+    }
   });
 
   selFillInput.addEventListener('change', () => {
-    const s = getSelected();
-    if (!s) return;
-    recordState();
-    s.fill = selFillInput.checked;
-    draw();
+    applyToSelection('fill', selFillInput.checked, ['rect', 'circle', 'polygon']);
   });
 
   selDashTightInput.addEventListener('input', () => {
-    const s = getSelected();
-    if (!s) return;
     const v = parseInt(selDashTightInput.value, 10);
     selDashTightValue.textContent = v;
-    s.dashTight = v;
+    const dashTypes = ['rect', 'circle', 'polygon', 'angle', 'line', 'arrow', 'pen'];
+    state.selectedIds.forEach(id => {
+      const s = state.shapes.find(x => x.id === id);
+      if (s && dashTypes.includes(s.type)) s.dashTight = v;
+    });
     draw();
   });
   selDashTightInput.addEventListener('change', () => {
-    const s = getSelected();
-    if (s) recordState();
+    if (state.selectedIds.length) recordState();
   });
 
   zoomInput.addEventListener('input', () => {
     const v = parseFloat(zoomInput.value);
     zoomValue.textContent = v + 'x';
-    const s = getSelected();
-    if (s && (s.type === 'magnifier' || s.type === 'stripMagnifier')) {
-      s.zoom = v;
-      draw();
-    } else {
+    state.selectedIds.forEach(id => {
+      const s = state.shapes.find(x => x.id === id);
+      if (s && (s.type === 'magnifier' || s.type === 'stripMagnifier')) s.zoom = v;
+    });
+    if (!state.selectedIds.some(id => {
+      const s = state.shapes.find(x => x.id === id);
+      return s && (s.type === 'magnifier' || s.type === 'stripMagnifier');
+    })) {
       state.defaultZoom = v;
     }
+    draw();
   });
   zoomInput.addEventListener('change', () => {
-    const s = getSelected();
-    if (s && (s.type === 'magnifier' || s.type === 'stripMagnifier')) {
-      recordState();
-    }
+    if (state.selectedIds.some(id => {
+      const s = state.shapes.find(x => x.id === id);
+      return s && (s.type === 'magnifier' || s.type === 'stripMagnifier');
+    })) recordState();
   });
 
   selMosaicBlur.addEventListener('input', () => {
     const v = parseInt(selMosaicBlur.value, 10);
     selMosaicBlurValue.textContent = v;
-    const s = getSelected();
-    if (s && s.type === 'mosaic') {
-      s.mosaicBlur = v;
-      draw();
-    }
+    state.selectedIds.forEach(id => {
+      const s = state.shapes.find(x => x.id === id);
+      if (s && s.type === 'mosaic') s.mosaicBlur = v;
+    });
+    draw();
   });
   selMosaicBlur.addEventListener('change', () => {
-    const s = getSelected();
-    if (s && s.type === 'mosaic') {
-      recordState();
-    }
+    if (state.selectedIds.some(id => {
+      const s = state.shapes.find(x => x.id === id);
+      return s && s.type === 'mosaic';
+    })) recordState();
   });
 
   function regeneratePolygonPoints(s) {
@@ -742,11 +752,11 @@
 
   // Polygon selection props events
   function onSelPolySidesChange(val) {
-    const s = getSelected();
-    if (!s || s.type !== 'polygon') return;
+    const v = Math.max(3, Math.min(20, parseInt(val, 10) || 5));
+    const targets = state.selectedIds.map(id => state.shapes.find(x => x.id === id)).filter(s => s && s.type === 'polygon');
+    if (!targets.length) return;
     recordState();
-    s.sides = Math.max(3, Math.min(20, parseInt(val, 10) || 5));
-    regeneratePolygonPoints(s);
+    targets.forEach(s => { s.sides = v; regeneratePolygonPoints(s); });
     draw();
     updateSelectionUI();
   }
@@ -754,19 +764,21 @@
   selPolySides.addEventListener('change', () => onSelPolySidesChange(selPolySides.value));
 
   selPolyRegular.addEventListener('change', () => {
-    const s = getSelected();
-    if (!s || s.type !== 'polygon') return;
+    const targets = state.selectedIds.map(id => state.shapes.find(x => x.id === id)).filter(s => s && s.type === 'polygon');
+    if (!targets.length) return;
     recordState();
-    s.regular = selPolyRegular.checked;
-    if (s.regular) {
-      const cen = shapeCenter(s);
-      const bbox = shapeLocalBBox(s);
-      s.x = cen.x + bbox.x;
-      s.y = cen.y + bbox.y;
-      s.w = bbox.w;
-      s.h = bbox.h;
-    }
-    regeneratePolygonPoints(s);
+    targets.forEach(s => {
+      s.regular = selPolyRegular.checked;
+      if (s.regular) {
+        const cen = shapeCenter(s);
+        const bbox = shapeLocalBBox(s);
+        s.x = cen.x + bbox.x;
+        s.y = cen.y + bbox.y;
+        s.w = bbox.w;
+        s.h = bbox.h;
+      }
+      regeneratePolygonPoints(s);
+    });
     draw();
     updateSelectionUI();
   });
@@ -783,11 +795,11 @@
   });
 
   function onSelAngleChange(val) {
-    const s = getSelected();
-    if (!s || s.type !== 'angle') return;
+    const targets = state.selectedIds.map(id => state.shapes.find(x => x.id === id)).filter(s => s && s.type === 'angle');
+    if (!targets.length) return;
     recordState();
     const deg = Math.max(1, Math.min(359, parseFloat(val) || 90));
-    setAngleSpread(s, deg);
+    targets.forEach(s => setAngleSpread(s, deg));
     draw();
     updateSelectionUI();
   }
@@ -795,22 +807,61 @@
   selAngle.addEventListener('change', () => onSelAngleChange(selAngle.value));
 
   selAngleFont.addEventListener('input', () => {
-    const s = getSelected();
-    if (!s || (s.type !== 'angle' && s.type !== 'text')) return;
-    s.fontSize = parseInt(selAngleFont.value, 10) || (s.type === 'text' ? 10 : 20);
-    selAngleFontValue.textContent = s.fontSize + 'px';
+    const v = parseInt(selAngleFont.value, 10) || 20;
+    selAngleFontValue.textContent = v + 'px';
+    state.selectedIds.forEach(id => {
+      const s = state.shapes.find(x => x.id === id);
+      if (s && (s.type === 'angle' || s.type === 'text')) s.fontSize = v;
+    });
     draw();
   });
   selAngleFont.addEventListener('change', () => {
-    const s = getSelected();
-    if (s && (s.type === 'angle' || s.type === 'text')) recordState();
+    if (state.selectedIds.some(id => {
+      const s = state.shapes.find(x => x.id === id);
+      return s && (s.type === 'angle' || s.type === 'text');
+    })) recordState();
   });
 
   function getSelected() {
     return state.shapes.find(s => s.id === state.selectedId) || null;
   }
 
+  function getCommonProp(ids, key, defaultVal) {
+    let val;
+    let hasVal = false;
+    for (const id of ids) {
+      const s = state.shapes.find(x => x.id === id);
+      if (!s) continue;
+      if (!(key in s)) return undefined;
+      if (!hasVal) { val = s[key]; hasVal = true; }
+      else if (val !== s[key]) return undefined;
+    }
+    return hasVal ? val : defaultVal;
+  }
+
+  function allHaveProp(ids, key) {
+    for (const id of ids) {
+      const s = state.shapes.find(x => x.id === id);
+      if (!s || !(key in s)) return false;
+    }
+    return ids.length > 0;
+  }
+
+  function applyToSelection(prop, value, filterTypes = null) {
+    if (!state.selectedIds.length) return;
+    recordState();
+    state.selectedIds.forEach(id => {
+      const s = state.shapes.find(x => x.id === id);
+      if (!s) return;
+      if (filterTypes && !filterTypes.includes(s.type)) return;
+      s[prop] = value;
+    });
+    draw();
+    updateSelectionUI();
+  }
+
   function updateSelectionUI() {
+    const multi = state.selectedIds.length > 1;
     const s = getSelected();
     if (!s) {
       selGroup.style.display = 'none';
@@ -837,26 +888,35 @@
     }
     noSelGroup.style.display = 'none';
     selGroup.style.display = 'block';
-    const sIdx = state.shapes.findIndex(x => x.id === s.id);
-    let selCount = 0;
-    for (let j = 0; j <= sIdx; j++) {
-      if (state.shapes[j].type === s.type) selCount++;
-    }
-    selType.textContent = (TYPE_NAMES[s.type] || s.type) + (selCount > 1 ? ' ' + selCount : '');
 
+    if (multi) {
+      selType.textContent = `已选中 ${state.selectedIds.length} 个元素`;
+    } else {
+      const sIdx = state.shapes.findIndex(x => x.id === s.id);
+      let selCount = 0;
+      for (let j = 0; j <= sIdx; j++) {
+        if (state.shapes[j].type === s.type) selCount++;
+      }
+      selType.textContent = (TYPE_NAMES[s.type] || s.type) + (selCount > 1 ? ' ' + selCount : '');
+    }
+
+    // Color
+    const commonColor = getCommonProp(state.selectedIds, 'color');
     selColorGroup.style.display = 'block';
-    buildColorPicker(selColorPicker, s.color, c => {
-      recordState();
-      s.color = c;
-      draw();
-      updateSelectionUI();
+    buildColorPicker(selColorPicker, commonColor !== undefined ? commonColor : s.color, c => {
+      applyToSelection('color', c);
     }, state.recentColor);
 
-    selWidthGroup.style.display = 'block';
-    selWidthInput.value = s.width;
-    selWidthValue.textContent = s.width + 'px';
+    // Width
+    const commonWidth = getCommonProp(state.selectedIds, 'width');
+    selWidthGroup.style.display = commonWidth !== undefined ? 'block' : 'none';
+    if (commonWidth !== undefined) {
+      selWidthInput.value = commonWidth;
+      selWidthValue.textContent = commonWidth + 'px';
+    }
 
-    if (s.type === 'text') {
+    // Text
+    if (!multi && s.type === 'text') {
       selTextGroup.style.display = 'block';
       selTextInput.value = s.text;
       selAngleFontGroup.style.display = 'block';
@@ -866,30 +926,47 @@
       selTextGroup.style.display = 'none';
     }
 
-    if (s.type === 'rect' || s.type === 'circle' || s.type === 'polygon') {
+    // Fill
+    const fillTypes = ['rect', 'circle', 'polygon'];
+    const hasFill = state.selectedIds.some(id => {
+      const sh = state.shapes.find(x => x.id === id);
+      return sh && fillTypes.includes(sh.type);
+    });
+    if (hasFill) {
       selFillGroup.style.display = 'block';
-      selFillInput.checked = !!s.fill;
+      const commonFill = getCommonProp(state.selectedIds, 'fill');
+      selFillInput.checked = commonFill !== undefined ? !!commonFill : false;
     } else {
       selFillGroup.style.display = 'none';
     }
 
-    if (['rect', 'circle', 'polygon', 'angle', 'line', 'arrow', 'pen'].includes(s.type)) {
+    // Dash
+    const dashTypes = ['rect', 'circle', 'polygon', 'angle', 'line', 'arrow', 'pen'];
+    const hasDash = state.selectedIds.some(id => {
+      const sh = state.shapes.find(x => x.id === id);
+      return sh && dashTypes.includes(sh.type);
+    });
+    if (hasDash) {
       selDashTypeGroup.style.display = 'block';
       selDashTightGroup.style.display = 'block';
-      buildDashTypePicker(selDashTypePicker, s.dashType || 'solid', type => {
-        recordState();
-        s.dashType = type;
-        draw();
-        updateSelectionUI();
+      const commonDash = getCommonProp(state.selectedIds, 'dashType', 'solid');
+      buildDashTypePicker(selDashTypePicker, commonDash || 'solid', type => {
+        applyToSelection('dashType', type, dashTypes);
       });
-      selDashTightInput.value = s.dashTight == null ? 5 : s.dashTight;
+      const commonTight = getCommonProp(state.selectedIds, 'dashTight', 5);
+      selDashTightInput.value = commonTight != null ? commonTight : 5;
       selDashTightValue.textContent = selDashTightInput.value;
     } else {
       selDashTypeGroup.style.display = 'none';
       selDashTightGroup.style.display = 'none';
     }
 
-    if (s.type === 'polygon') {
+    // Polygon specific
+    const polySelected = state.selectedIds.filter(id => {
+      const sh = state.shapes.find(x => x.id === id);
+      return sh && sh.type === 'polygon';
+    });
+    if (polySelected.length === 1 && !multi) {
       selPolygonGroup.style.display = 'block';
       selPolySides.value = s.sides || 5;
       selPolyRegular.checked = !!s.regular;
@@ -904,7 +981,17 @@
       }
       selAngleGroup.style.display = 'none';
       selAngleFontGroup.style.display = 'none';
-    } else if (s.type === 'angle') {
+    } else if (polySelected.length > 0) {
+      // Multi selection contains polygons: hide vertex angle, but keep sides/regular if all polygons selected and common values exist
+      const commonSides = getCommonProp(polySelected, 'sides');
+      const commonRegular = getCommonProp(polySelected, 'regular');
+      selPolygonGroup.style.display = (commonSides !== undefined || commonRegular !== undefined) ? 'block' : 'none';
+      if (commonSides !== undefined) selPolySides.value = commonSides;
+      if (commonRegular !== undefined) selPolyRegular.checked = commonRegular;
+      selVertexAngleGroup.style.display = 'none';
+      selAngleGroup.style.display = 'none';
+      selAngleFontGroup.style.display = 'none';
+    } else if (!multi && s.type === 'angle') {
       selPolygonGroup.style.display = 'none';
       selVertexAngleGroup.style.display = 'none';
       selAngleGroup.style.display = 'block';
@@ -913,17 +1000,25 @@
       selAngle.value = deg;
       selAngleFont.value = s.fontSize || 20;
       selAngleFontValue.textContent = (s.fontSize || 20) + 'px';
-    } else if (s.type !== 'text') {
+    } else if (!multi && s.type === 'text') {
+      // handled above
+    } else {
       selPolygonGroup.style.display = 'none';
       selVertexAngleGroup.style.display = 'none';
       selAngleGroup.style.display = 'none';
       selAngleFontGroup.style.display = 'none';
     }
 
-    if (s.type === 'magnifier' || s.type === 'stripMagnifier') {
+    // Zoom (magnifier)
+    const magSelected = state.selectedIds.filter(id => {
+      const sh = state.shapes.find(x => x.id === id);
+      return sh && (sh.type === 'magnifier' || sh.type === 'stripMagnifier');
+    });
+    if (magSelected.length) {
       zoomGroup.style.display = 'block';
-      zoomInput.value = s.zoom || 2;
-      zoomValue.textContent = (s.zoom || 2) + 'x';
+      const commonZoom = getCommonProp(magSelected, 'zoom');
+      zoomInput.value = commonZoom !== undefined ? commonZoom : state.defaultZoom;
+      zoomValue.textContent = zoomInput.value + 'x';
     } else {
       if (state.tool === 'magnifier' || state.tool === 'stripMagnifier') {
         zoomGroup.style.display = 'block';
@@ -934,10 +1029,16 @@
       }
     }
 
-    if (s.type === 'mosaic') {
+    // Mosaic blur
+    const mosaicSelected = state.selectedIds.filter(id => {
+      const sh = state.shapes.find(x => x.id === id);
+      return sh && sh.type === 'mosaic';
+    });
+    if (mosaicSelected.length) {
       selMosaicBlurGroup.style.display = 'block';
-      selMosaicBlur.value = s.mosaicBlur || 12;
-      selMosaicBlurValue.textContent = s.mosaicBlur || 12;
+      const commonBlur = getCommonProp(mosaicSelected, 'mosaicBlur');
+      selMosaicBlur.value = commonBlur !== undefined ? commonBlur : 12;
+      selMosaicBlurValue.textContent = selMosaicBlur.value;
     } else {
       selMosaicBlurGroup.style.display = 'none';
     }
@@ -979,7 +1080,7 @@
       }
       const displayName = (TYPE_NAMES[s.type] || s.type) + (typeCount > 1 ? ' ' + typeCount : '');
       const item = document.createElement('div');
-      item.className = 'layer-item' + (s.id === state.selectedId ? ' active' : '');
+      item.className = 'layer-item' + (state.selectedIds.includes(s.id) ? ' active' : '');
       item.draggable = true;
       item.dataset.arrayIndex = ai;
       item.innerHTML = `
@@ -988,6 +1089,7 @@
       `;
       item.addEventListener('click', () => {
         state.selectedId = s.id;
+        state.selectedIds = [s.id];
         updateSelectionUI();
         draw();
       });
@@ -1085,6 +1187,7 @@
     state.undoStack = [];
     state.redoStack = [];
     state.selectedId = null;
+    state.selectedIds = [];
     state.tempShape = null;
     if (color != null) state.color = color;
     if (width != null) state.width = width;
@@ -1157,6 +1260,7 @@
     };
     state.shapes.push(shape);
     state.selectedId = shape.id;
+    state.selectedIds = [shape.id];
     renderLayerList();
     updateSelectionUI();
     clearMosaicCaches();
@@ -1426,13 +1530,33 @@
     }
 
     const compositeCanvas = buildCompositeCanvas();
-    state.shapes.forEach(s => drawShape(ctx, s, s.id === state.selectedId, compositeCanvas));
+    const isSelected = id => state.selectedIds.includes(id);
+    state.shapes.forEach(s => drawShape(ctx, s, isSelected(s.id), compositeCanvas));
     if (state.tempShape) drawShape(ctx, state.tempShape, false, compositeCanvas);
 
-    // Draw selection UI
-    if (state.selectedId && !state.tempShape) {
+    // Draw selection UI (only for single selection)
+    if (state.selectedIds.length === 1 && !state.tempShape) {
       const s = state.shapes.find(x => x.id === state.selectedId);
       if (s) drawSelectionUI(ctx, s);
+    }
+
+    // Draw marquee box
+    if (state.isMarquee && state.marqueeStart && state.marqueeEnd) {
+      const ms = state.marqueeStart;
+      const me = state.marqueeEnd;
+      const mx = Math.min(ms.x, me.x);
+      const my = Math.min(ms.y, me.y);
+      const mw = Math.abs(me.x - ms.x);
+      const mh = Math.abs(me.y - ms.y);
+      ctx.save();
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.strokeStyle = '#339af0';
+      ctx.lineWidth = 1;
+      ctx.setLineDash([4, 4]);
+      ctx.strokeRect(mx, my, mw, mh);
+      ctx.fillStyle = 'rgba(51, 154, 240, 0.08)';
+      ctx.fillRect(mx, my, mw, mh);
+      ctx.restore();
     }
 
     ctx.restore();
@@ -1790,6 +1914,16 @@
     }
 
     if (hasAngle) c.restore();
+
+    if (isSelected) {
+      const bbox = shapeLocalBBox(s, c);
+      c.save();
+      c.strokeStyle = '#339af0';
+      c.lineWidth = 1.5 / state.scale;
+      c.setLineDash([4 / state.scale, 4 / state.scale]);
+      c.strokeRect(bbox.x - 4 / state.scale, bbox.y - 4 / state.scale, bbox.w + 8 / state.scale, bbox.h + 8 / state.scale);
+      c.restore();
+    }
   }
 
   function drawArrowHead(c, x, y, angle, width) {
@@ -2183,7 +2317,7 @@
 
     if (state.tool === 'select') {
       const h = hitHandle(pos);
-      if (h) {
+      if (h && state.selectedIds.length <= 1) {
         recordState();
         state.draggedHandle = h.handle;
         if (h.handle === 'rot') {
@@ -2204,6 +2338,7 @@
       if (s) {
         recordState();
         state.selectedId = s.id;
+        state.selectedIds = [s.id];
         state.draggedHandle = null;
         state.isDragging = true;
         state.dragStart = {x: pos.x, y: pos.y};
@@ -2213,7 +2348,12 @@
         draw();
         return;
       }
+      // Start marquee selection
+      state.isMarquee = true;
+      state.marqueeStart = {x: m.x, y: m.y};
+      state.marqueeEnd = {x: m.x, y: m.y};
       state.selectedId = null;
+      state.selectedIds = [];
       state.draggedHandle = null;
       updateSelectionUI();
       draw();
@@ -2230,14 +2370,14 @@
       state.color = hex;
       state.recentColor = hex;
       buildColorPicker(globalColorPicker, state.color, setGlobalColor, state.recentColor);
-      if (state.selectedId) {
-        const sel = state.shapes.find(x => x.id === state.selectedId);
-        if (sel) {
-          recordState();
-          sel.color = hex;
-          draw();
-          updateSelectionUI();
-        }
+      if (state.selectedIds.length) {
+        recordState();
+        state.selectedIds.forEach(id => {
+          const sel = state.shapes.find(x => x.id === id);
+          if (sel) sel.color = hex;
+        });
+        draw();
+        updateSelectionUI();
       }
       setTool('select');
       return;
@@ -2368,9 +2508,14 @@
         draw();
         return;
       }
+      if (state.isMarquee) {
+        state.marqueeEnd = {x: m.x, y: m.y};
+        draw();
+        return;
+      }
       // Hover cursor
       const h = hitHandle(pos);
-      if (h) {
+      if (h && state.selectedIds.length <= 1) {
         canvas.style.cursor = handleCursor(h.handle);
       } else if (hitShape(pos)) {
         canvas.style.cursor = 'move';
@@ -2454,6 +2599,36 @@
       updateCursor();
       return;
     }
+    if (state.isMarquee) {
+      state.isMarquee = false;
+      const ms = state.marqueeStart;
+      const me = state.marqueeEnd;
+      const mx = Math.min(ms.x, me.x);
+      const my = Math.min(ms.y, me.y);
+      const mw = Math.abs(me.x - ms.x);
+      const mh = Math.abs(me.y - ms.y);
+      if (mw > 4 || mh > 4) {
+        const m1 = screenToWorld(mx, my);
+        const m2 = screenToWorld(mx + mw, my + mh);
+        const bbox = {x: Math.min(m1.x, m2.x), y: Math.min(m1.y, m2.y), w: Math.abs(m2.x - m1.x), h: Math.abs(m2.y - m1.y)};
+        const ids = [];
+        state.shapes.forEach(s => {
+          const c = shapeCenter(s);
+          if (c.x >= bbox.x && c.x <= bbox.x + bbox.w && c.y >= bbox.y && c.y <= bbox.y + bbox.h) {
+            ids.push(s.id);
+          }
+        });
+        if (ids.length) {
+          state.selectedIds = ids;
+          state.selectedId = ids[0];
+        }
+      }
+      state.marqueeStart = null;
+      state.marqueeEnd = null;
+      updateSelectionUI();
+      draw();
+      return;
+    }
     if (state.isDrawing) {
       state.isDrawing = false;
       finalizeTempShape();
@@ -2530,6 +2705,7 @@
     }
     state.shapes.push(state.tempShape);
     state.selectedId = state.tempShape.id;
+    state.selectedIds = [state.tempShape.id];
     state.tempShape = null;
     updateSelectionUI();
     setTool('select');
@@ -2994,13 +3170,21 @@
   }
 
   function duplicateSelected() {
-    const s = getSelected();
-    if (!s) return;
+    if (!state.selectedIds.length) return;
     recordState();
-    const clone = duplicateShape(s);
-    const idx = state.shapes.findIndex(x => x.id === s.id);
-    state.shapes.splice(idx + 1, 0, clone);
-    state.selectedId = clone.id;
+    const newIds = [];
+    // Process in reverse order so splicing maintains correct positions
+    const toCopy = state.selectedIds.slice().reverse();
+    toCopy.forEach(id => {
+      const s = state.shapes.find(x => x.id === id);
+      if (!s) return;
+      const clone = duplicateShape(s);
+      const idx = state.shapes.findIndex(x => x.id === s.id);
+      state.shapes.splice(idx + 1, 0, clone);
+      newIds.push(clone.id);
+    });
+    state.selectedIds = newIds.reverse();
+    state.selectedId = state.selectedIds[0] || null;
     updateSelectionUI();
     renderLayerList();
     clearMosaicCaches();
