@@ -129,6 +129,7 @@
     resizeHandle: null,
     dragStart: null,      // mouse pos at drag start (screen)
     dragOrigin: null,     // copy of shape at drag start
+    groupDragOrigins: [], // array of {id, origin} for multi-drag
     lastMouse: {x:0, y:0},
     tempShape: null,
     spaceDown: false,
@@ -1540,6 +1541,44 @@
       if (s) drawSelectionUI(ctx, s);
     }
 
+    // Draw multi-selection group bounding box
+    if (state.selectedIds.length > 1) {
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+      state.selectedIds.forEach(id => {
+        const s = state.shapes.find(x => x.id === id);
+        if (!s) return;
+        const c = shapeCenter(s, ctx);
+        const b = shapeLocalBBox(s, ctx);
+        const cos = Math.cos(s.angle || 0);
+        const sin = Math.sin(s.angle || 0);
+        const corners = [
+          {x: b.x, y: b.y},
+          {x: b.x + b.w, y: b.y},
+          {x: b.x + b.w, y: b.y + b.h},
+          {x: b.x, y: b.y + b.h}
+        ];
+        corners.forEach(p => {
+          const rx = p.x * cos - p.y * sin;
+          const ry = p.x * sin + p.y * cos;
+          const wx = c.x + rx;
+          const wy = c.y + ry;
+          minX = Math.min(minX, wx);
+          minY = Math.min(minY, wy);
+          maxX = Math.max(maxX, wx);
+          maxY = Math.max(maxY, wy);
+        });
+      });
+      if (isFinite(minX)) {
+        const pad = 6 / state.scale;
+        ctx.save();
+        ctx.strokeStyle = '#339af0';
+        ctx.lineWidth = 1.5 / state.scale;
+        ctx.setLineDash([4 / state.scale, 4 / state.scale]);
+        ctx.strokeRect(minX - pad, minY - pad, (maxX - minX) + pad * 2, (maxY - minY) + pad * 2);
+        ctx.restore();
+      }
+    }
+
     // Draw marquee box
     if (state.isMarquee && state.marqueeStart && state.marqueeEnd) {
       const ms = state.marqueeStart;
@@ -1914,16 +1953,6 @@
     }
 
     if (hasAngle) c.restore();
-
-    if (isSelected) {
-      const bbox = shapeLocalBBox(s, c);
-      c.save();
-      c.strokeStyle = '#339af0';
-      c.lineWidth = 1.5 / state.scale;
-      c.setLineDash([4 / state.scale, 4 / state.scale]);
-      c.strokeRect(bbox.x - 4 / state.scale, bbox.y - 4 / state.scale, bbox.w + 8 / state.scale, bbox.h + 8 / state.scale);
-      c.restore();
-    }
   }
 
   function drawArrowHead(c, x, y, angle, width) {
@@ -2337,6 +2366,20 @@
       const s = hitShape(pos);
       if (s) {
         recordState();
+        if (state.selectedIds.length > 1 && state.selectedIds.includes(s.id)) {
+          // Start group drag for multi-selection
+          state.draggedHandle = null;
+          state.isDragging = true;
+          state.dragStart = {x: pos.x, y: pos.y};
+          state.dragOrigin = null;
+          state.groupDragOrigins = state.selectedIds.map(id => {
+            const shape = state.shapes.find(x => x.id === id);
+            return {id, origin: JSON.parse(JSON.stringify(shape))};
+          });
+          updateCursor();
+          draw();
+          return;
+        }
         state.selectedId = s.id;
         state.selectedIds = [s.id];
         state.draggedHandle = null;
@@ -2499,11 +2542,16 @@
         return;
       }
       if (state.isDragging) {
-        const s = state.shapes.find(x => x.id === state.selectedId);
-        if (s) {
-          const dx = pos.x - state.dragStart.x;
-          const dy = pos.y - state.dragStart.y;
-          applyMove(s, dx, dy, state.dragOrigin);
+        const dx = pos.x - state.dragStart.x;
+        const dy = pos.y - state.dragStart.y;
+        if (state.groupDragOrigins && state.groupDragOrigins.length) {
+          state.groupDragOrigins.forEach(item => {
+            const s = state.shapes.find(x => x.id === item.id);
+            if (s) applyMove(s, dx, dy, item.origin);
+          });
+        } else {
+          const s = state.shapes.find(x => x.id === state.selectedId);
+          if (s) applyMove(s, dx, dy, state.dragOrigin);
         }
         draw();
         return;
@@ -2583,6 +2631,7 @@
     if (state.isDragging) {
       state.isDragging = false;
       state.dragOrigin = null;
+      state.groupDragOrigins = [];
       updateCursor();
       return;
     }
