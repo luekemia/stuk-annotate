@@ -33,6 +33,8 @@ I’m a STEM beginner who built this entirely through Vibe Coding. There’s no 
 
 ## Quick Start
 
+**Live Demo:** https://luekemia.github.io/stuk-annotate/
+
 No installation required—just open `index.html` in a modern browser.
 
 ```bash

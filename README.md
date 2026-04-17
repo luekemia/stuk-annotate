@@ -33,6 +33,8 @@
 
 ## 快速开始
 
+**在线试用**：https://luekemia.github.io/stuk-annotate/
+
 无需安装任何依赖，直接在浏览器中打开 `index.html` 即可使用。
 
 ```bash
