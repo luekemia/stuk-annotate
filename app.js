@@ -3240,6 +3240,22 @@
     draw();
   }
 
+  let nudgeRecorded = false;
+  function nudgeSelection(nx, ny) {
+    if (!state.selectedIds.length) return;
+    if (!nudgeRecorded) {
+      recordState();
+      nudgeRecorded = true;
+    }
+    state.selectedIds.forEach(id => {
+      const s = state.shapes.find(x => x.id === id);
+      if (!s) return;
+      const origin = JSON.parse(JSON.stringify(s));
+      applyMove(s, nx, ny, origin);
+    });
+    draw();
+  }
+
   // ===== Keyboard shortcuts =====
   window.addEventListener('keydown', e => {
     if (e.code === 'Space') {
@@ -3263,6 +3279,17 @@
     if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'c') {
       e.preventDefault();
       duplicateSelected();
+      return;
+    }
+    if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.key)) {
+      e.preventDefault();
+      const step = (e.shiftKey ? 10 : 1) / state.scale;
+      let dx = 0, dy = 0;
+      if (e.key === 'ArrowUp') dy = -step;
+      if (e.key === 'ArrowDown') dy = step;
+      if (e.key === 'ArrowLeft') dx = -step;
+      if (e.key === 'ArrowRight') dx = step;
+      nudgeSelection(dx, dy);
       return;
     }
     if (e.key === 'Delete' || e.key === 'Backspace') {
@@ -3309,6 +3336,9 @@
     if (e.code === 'Space') {
       state.spaceDown = false;
       updateCursor();
+    }
+    if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.key)) {
+      nudgeRecorded = false;
     }
   });
 
