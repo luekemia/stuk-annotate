@@ -24,6 +24,11 @@ I’m a STEM beginner who built this entirely through Vibe Coding. There’s no 
 - **Selection Editing**: When an object is selected, the right panel lets you change color, stroke width, font size, fill, dash style, rotation, and more.
 - **Undo / Redo**: Full history support for all operations.
 - **Project Save / Open**: Save the current canvas and all annotations as a `.stukproj` file. When reopened, every annotation remains an independent object that can still be moved, resized, rotated, or edited—something many similar tools (which only export static images) cannot do. Supports overwrite or save-as.
+- **Marquee Selection & Multi-Selection Batch Operations**: Drag on an empty area to draw a marquee box; all annotations inside are selected in bulk. You can then change color, stroke width, font size, fill, dash style, zoom, mosaic blur, polygon sides / regular mode, angle / font size, etc. for all selected items at once, or drag, duplicate, and delete them as a group.
+- **Duplicate Annotation**: Press `Cmd+C` (or `Ctrl+C`) to duplicate the selected annotation(s).
+- **Proportional Corner Resize**: Dragging any of the four corner handles now scales the shape proportionally.
+- **Pixel-Level Nudge**: Use the arrow keys `↑ ↓ ← →` to nudge selected shape(s) by one screen pixel per press. Hold `Shift` to nudge by 10 pixels.
+- **Native File Overwrite & Path Memory**: On browsers that support the File System Access API (Chrome/Edge), opened projects remember their original file path. Overwrite saves directly back to the original file, and Save As defaults to the same folder. Falls back to legacy download behavior on unsupported browsers.
 - **Export & Copy**: One-click export to PNG or copy to clipboard.
 
 ## Quick Start
@@ -55,7 +60,10 @@ python3 -m http.server 8080
 | `I` | Color picker |
 | `Ctrl + Z` | Undo |
 | `Ctrl + Y` | Redo |
+| `Cmd / Ctrl + C` | Duplicate selected object(s) |
 | `Del` | Delete selected object |
+| `↑ ↓ ← →` | Nudge selected object(s) by 1 pixel |
+| `Shift + Arrow keys` | Nudge by 10 pixels |
 | `Scroll wheel` | Zoom canvas |
 | `Middle click / Space + drag` | Pan canvas |
 
