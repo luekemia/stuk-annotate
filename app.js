@@ -1378,7 +1378,7 @@
   });
 
   // ===== Save / Load Project =====
-  function doDownloadProject(filename) {
+  function buildProjectBlob() {
     const project = {
       version: 1,
       image: state.bgImage.src,
@@ -1386,13 +1386,37 @@
       color: state.color,
       width: state.width
     };
-    const blob = new Blob([JSON.stringify(project)], { type: 'application/json' });
+    return new Blob([JSON.stringify(project)], { type: 'application/json' });
+  }
+
+  function doDownloadProject(filename) {
+    const blob = buildProjectBlob();
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
     a.download = filename;
     a.click();
     URL.revokeObjectURL(url);
+  }
+
+  async function trySaveWithFilePicker(suggestedName) {
+    if (!window.showSaveFilePicker) return false;
+    try {
+      const handle = await window.showSaveFilePicker({
+        suggestedName,
+        types: [{
+          description: 'Stukproj 项目文件',
+          accept: { 'application/json': ['.stukproj'] }
+        }]
+      });
+      const writable = await handle.createWritable();
+      await writable.write(buildProjectBlob());
+      await writable.close();
+      return handle.name;
+    } catch (err) {
+      if (err.name === 'AbortError') return null; // user cancelled
+      throw err;
+    }
   }
 
   function openSaveProjectOverlay() {
@@ -1421,20 +1445,31 @@
     closeSaveProjectOverlay();
   });
 
-  saveProjectOverwrite.addEventListener('click', (e) => {
+  saveProjectOverwrite.addEventListener('click', async (e) => {
     e.stopPropagation();
     if (!state.currentProjectName) return;
-    doDownloadProject(state.currentProjectName);
-    closeSaveProjectOverlay();
+    const savedName = await trySaveWithFilePicker(state.currentProjectName);
+    if (savedName === false) {
+      doDownloadProject(state.currentProjectName);
+    } else if (savedName) {
+      state.currentProjectName = savedName;
+    }
+    if (savedName !== null) closeSaveProjectOverlay();
   });
 
-  saveProjectConfirm.addEventListener('click', (e) => {
+  saveProjectConfirm.addEventListener('click', async (e) => {
     e.stopPropagation();
     let name = saveProjectName.value.trim();
     if (!name) return alert('请输入文件名');
     if (!name.endsWith('.stukproj')) name += '.stukproj';
-    doDownloadProject(name);
-    closeSaveProjectOverlay();
+    const savedName = await trySaveWithFilePicker(name);
+    if (savedName === false) {
+      doDownloadProject(name);
+      state.currentProjectName = name;
+    } else if (savedName) {
+      state.currentProjectName = savedName;
+    }
+    if (savedName !== null) closeSaveProjectOverlay();
   });
 
   saveProjectOverlay.addEventListener('click', () => {
