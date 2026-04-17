@@ -2577,6 +2577,32 @@
     }
   }
 
+  function constrainCornerResize(x, y, w, h, origin, handle) {
+    if (['nw','ne','sw','se'].includes(handle)) {
+      const ratio = origin.w / origin.h;
+      const absW = Math.abs(w);
+      const absH = Math.abs(h);
+      if (absW / ratio > absH) {
+        const signH = h >= 0 ? 1 : -1;
+        const newH = absW / ratio * signH;
+        if (handle.includes('n')) {
+          y = (y + h) - newH;
+        }
+        h = newH;
+      } else {
+        const signW = w >= 0 ? 1 : -1;
+        const newW = absH * ratio * signW;
+        if (handle.includes('w')) {
+          x = (x + w) - newW;
+        }
+        w = newW;
+      }
+    }
+    if (w < 0) { x += w; w = -w; }
+    if (h < 0) { y += h; h = -h; }
+    return {x, y, w, h};
+  }
+
   function applyResize(s, handle, dx, dy, origin) {
     if ((s.angle || 0) !== 0) return;
     if (s.type === 'rect' || s.type === 'mosaic' || s.type === 'circle' || s.type === 'image') {
@@ -2585,9 +2611,8 @@
       if (handle.includes('w')) { x += dx; w -= dx; }
       if (handle.includes('s')) h += dy;
       if (handle.includes('n')) { y += dy; h -= dy; }
-      if (w < 0) { x += w; w = -w; }
-      if (h < 0) { y += h; h = -h; }
-      s.x = x; s.y = y; s.w = w; s.h = h;
+      const res = constrainCornerResize(x, y, w, h, origin, handle);
+      s.x = res.x; s.y = res.y; s.w = res.w; s.h = res.h;
     } else if (s.type === 'magnifier') {
       if (handle === 'anchor') {
         s.tx = origin.tx + dx; s.ty = origin.ty + dy;
@@ -2632,10 +2657,8 @@
         if (handle.includes('w')) { x += dx; w -= dx; }
         if (handle.includes('s')) h += dy;
         if (handle.includes('n')) { y += dy; h -= dy; }
-        if (w < 0) { x += w; w = -w; }
-        if (h < 0) { y += h; h = -h; }
-        w = Math.max(10, w);
-        h = Math.max(10, h);
+        const res = constrainCornerResize(x, y, w, h, origin, handle);
+        x = res.x; y = res.y; w = Math.max(10, res.w); h = Math.max(10, res.h);
         const gapX = origin.tx - (origin.x + origin.w / 2);
         const gapY = origin.ty - (origin.y + origin.h / 2);
         s.x = x; s.y = y; s.w = w; s.h = h;
@@ -2649,9 +2672,8 @@
         if (handle.includes('w')) { x += dx; w -= dx; }
         if (handle.includes('s')) h += dy;
         if (handle.includes('n')) { y += dy; h -= dy; }
-        if (w < 0) { x += w; w = -w; }
-        if (h < 0) { y += h; h = -h; }
-        s.x = x; s.y = y; s.w = w; s.h = h;
+        const res = constrainCornerResize(x, y, w, h, origin, handle);
+        s.x = res.x; s.y = res.y; s.w = res.w; s.h = res.h;
         const cx = s.x + s.w/2;
         const cy = s.y + s.h/2;
         s.points = generateRegularPolygonPoints(cx, cy, s.w, s.h, s.sides);
@@ -2939,6 +2961,52 @@
     textEditor.style.height = textEditor.scrollHeight + 'px';
   }
 
+  function duplicateShape(s) {
+    const clone = JSON.parse(JSON.stringify(s));
+    clone.id = uid();
+    const dx = 10;
+    const dy = 10;
+    if (clone.type === 'text' || clone.type === 'rect' || clone.type === 'mosaic' || clone.type === 'circle' || clone.type === 'image') {
+      clone.x += dx; clone.y += dy;
+    } else if (clone.type === 'magnifier') {
+      clone.x += dx; clone.y += dy;
+      if (clone.tx != null) clone.tx += dx;
+      if (clone.ty != null) clone.ty += dy;
+    } else if (clone.type === 'stripMagnifier') {
+      clone.x += dx; clone.y += dy;
+      if (clone.tx != null) clone.tx += dx;
+      if (clone.ty != null) clone.ty += dy;
+    } else if (clone.type === 'polygon') {
+      if (clone.points) clone.points = clone.points.map(p => ({x: p.x + dx, y: p.y + dy}));
+      if (clone.regular) {
+        clone.x += dx; clone.y += dy;
+      } else {
+        let minX = Infinity, minY = Infinity;
+        clone.points.forEach(p => { minX = Math.min(minX, p.x); minY = Math.min(minY, p.y); });
+        clone.x = minX; clone.y = minY;
+      }
+    } else if (clone.type === 'angle') {
+      clone.x += dx; clone.y += dy;
+    } else if (clone.type === 'line' || clone.type === 'arrow' || clone.type === 'pen') {
+      if (clone.points) clone.points = clone.points.map(p => ({...p, x: p.x + dx, y: p.y + dy}));
+    }
+    return clone;
+  }
+
+  function duplicateSelected() {
+    const s = getSelected();
+    if (!s) return;
+    recordState();
+    const clone = duplicateShape(s);
+    const idx = state.shapes.findIndex(x => x.id === s.id);
+    state.shapes.splice(idx + 1, 0, clone);
+    state.selectedId = clone.id;
+    updateSelectionUI();
+    renderLayerList();
+    clearMosaicCaches();
+    draw();
+  }
+
   // ===== Keyboard shortcuts =====
   window.addEventListener('keydown', e => {
     if (e.code === 'Space') {
@@ -2957,6 +3025,11 @@
     if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'y') {
       e.preventDefault();
       redo();
+      return;
+    }
+    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'c') {
+      e.preventDefault();
+      duplicateSelected();
       return;
     }
     if (e.key === 'Delete' || e.key === 'Backspace') {
