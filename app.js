@@ -18,6 +18,7 @@
   const clearBtn = document.getElementById('clear');
   const deleteBtn = document.getElementById('delete');
   const saveProjectBtn = document.getElementById('saveProject');
+  const openProjectBtn = document.getElementById('openProjectBtn');
   const openProjectInput = document.getElementById('openProject');
   const statusSize = document.getElementById('statusSize');
   const statusScale = document.getElementById('statusScale');
@@ -105,6 +106,7 @@
     mosaicCaches: {},
     isBlankCanvas: false,
     currentProjectName: null,
+    projectFileHandle: null,
     shapes: [],
     undoStack: [],
     redoStack: [],
@@ -1399,19 +1401,25 @@
     URL.revokeObjectURL(url);
   }
 
-  async function trySaveWithFilePicker(suggestedName) {
+  async function writeToHandle(handle) {
+    const writable = await handle.createWritable();
+    await writable.write(buildProjectBlob());
+    await writable.close();
+  }
+
+  async function trySaveWithFilePicker(suggestedName, startInHandle = null) {
     if (!window.showSaveFilePicker) return false;
     try {
-      const handle = await window.showSaveFilePicker({
+      const opts = {
         suggestedName,
         types: [{
           description: 'Stukproj 项目文件',
           accept: { 'application/json': ['.stukproj'] }
         }]
-      });
-      const writable = await handle.createWritable();
-      await writable.write(buildProjectBlob());
-      await writable.close();
+      };
+      if (startInHandle) opts.startIn = startInHandle;
+      const handle = await window.showSaveFilePicker(opts);
+      await writeToHandle(handle);
       return handle.name;
     } catch (err) {
       if (err.name === 'AbortError') return null; // user cancelled
@@ -1448,13 +1456,23 @@
   saveProjectOverwrite.addEventListener('click', async (e) => {
     e.stopPropagation();
     if (!state.currentProjectName) return;
+    if (state.projectFileHandle) {
+      try {
+        await writeToHandle(state.projectFileHandle);
+        closeSaveProjectOverlay();
+      } catch (err) {
+        alert('保存失败：' + err.message);
+      }
+      return;
+    }
     const savedName = await trySaveWithFilePicker(state.currentProjectName);
     if (savedName === false) {
       doDownloadProject(state.currentProjectName);
+      closeSaveProjectOverlay();
     } else if (savedName) {
       state.currentProjectName = savedName;
+      closeSaveProjectOverlay();
     }
-    if (savedName !== null) closeSaveProjectOverlay();
   });
 
   saveProjectConfirm.addEventListener('click', async (e) => {
@@ -1462,14 +1480,15 @@
     let name = saveProjectName.value.trim();
     if (!name) return alert('请输入文件名');
     if (!name.endsWith('.stukproj')) name += '.stukproj';
-    const savedName = await trySaveWithFilePicker(name);
+    const savedName = await trySaveWithFilePicker(name, state.projectFileHandle);
     if (savedName === false) {
       doDownloadProject(name);
       state.currentProjectName = name;
+      closeSaveProjectOverlay();
     } else if (savedName) {
       state.currentProjectName = savedName;
+      closeSaveProjectOverlay();
     }
-    if (savedName !== null) closeSaveProjectOverlay();
   });
 
   saveProjectOverlay.addEventListener('click', () => {
@@ -1489,9 +1508,7 @@
     }
   });
 
-  openProjectInput.addEventListener('change', e => {
-    const file = e.target.files[0];
-    if (!file) return;
+  function loadProjectFromFile(file, fileName, fileHandle = null) {
     const reader = new FileReader();
     reader.onload = evt => {
       try {
@@ -1499,7 +1516,8 @@
         if (!project.image || !Array.isArray(project.shapes)) throw new Error('项目文件格式不正确');
         const img = new Image();
         img.onload = () => {
-          initProject(img, project.shapes, project.color, project.width, file.name);
+          initProject(img, project.shapes, project.color, project.width, fileName);
+          state.projectFileHandle = fileHandle;
           const imageSrcs = project.shapes
             .filter(s => s.type === 'image' && s.src)
             .map(s => s.src);
@@ -1525,6 +1543,33 @@
       }
     };
     reader.readAsText(file);
+  }
+
+  openProjectBtn.addEventListener('click', async () => {
+    if (window.showOpenFilePicker) {
+      try {
+        const [handle] = await window.showOpenFilePicker({
+          types: [{
+            description: 'Stukproj 项目文件',
+            accept: { 'application/json': ['.stukproj', '.json'] }
+          }]
+        });
+        const file = await handle.getFile();
+        loadProjectFromFile(file, file.name, handle);
+      } catch (err) {
+        if (err.name !== 'AbortError') {
+          alert('打开项目失败：' + err.message);
+        }
+      }
+    } else {
+      openProjectInput.click();
+    }
+  });
+
+  openProjectInput.addEventListener('change', e => {
+    const file = e.target.files[0];
+    if (!file) return;
+    loadProjectFromFile(file, file.name, null);
   });
 
   // ===== Drawing =====
