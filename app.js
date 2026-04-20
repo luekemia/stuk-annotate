@@ -1428,7 +1428,7 @@
         suggestedName,
         types: [{
           description: 'Stukproj 项目文件',
-          accept: { 'application/json': ['.stukproj'] }
+          accept: { 'application/json': ['.anno'] }
         }]
       };
       if (startInHandle) opts.startIn = startInHandle;
@@ -1445,7 +1445,7 @@
   function openSaveProjectOverlay() {
     if (!state.bgImage) return alert('请先打开图片或创建空白画布');
     const hasOpened = !!state.currentProjectName;
-    saveProjectName.value = state.currentProjectName || ('project_' + Date.now() + '.stukproj');
+    saveProjectName.value = state.currentProjectName || '[未命名].anno';
     if (hasOpened) {
       saveProjectOverwrite.style.display = 'inline-flex';
       saveProjectConfirm.textContent = '另存为';
@@ -1454,7 +1454,7 @@
       saveProjectConfirm.textContent = '保存';
     }
     saveProjectOverlay.style.display = 'flex';
-    setTimeout(() => saveProjectName.focus(), 0);
+    setTimeout(() => { saveProjectName.focus(); saveProjectName.select(); }, 0);
   }
 
   function closeSaveProjectOverlay() {
@@ -1501,7 +1501,7 @@
     e.stopPropagation();
     let name = saveProjectName.value.trim();
     if (!name) return alert('请输入文件名');
-    if (!name.endsWith('.stukproj')) name += '.stukproj';
+    if (!name.endsWith('.anno')) name += '.anno';
     const savedName = await trySaveWithFilePicker(name, state.projectFileHandle);
     if (savedName === false) {
       doDownloadProject(name);
@@ -1660,7 +1660,7 @@
         const [handle] = await window.showOpenFilePicker({
           types: [{
             description: 'Stukproj 项目文件',
-            accept: { 'application/json': ['.stukproj', '.json'] }
+            accept: { 'application/json': ['.anno', '.json'] }
           }]
         });
         const file = await handle.getFile();
@@ -2726,7 +2726,7 @@
       }
       if (state.isResizing) {
         const s = state.shapes.find(x => x.id === state.selectedId);
-        if (s) applyResize(s, state.resizeHandle, pos.x - state.dragStart.x, pos.y - state.dragStart.y, state.dragOrigin);
+        if (s) applyResize(s, state.resizeHandle, pos.x - state.dragStart.x, pos.y - state.dragStart.y, state.dragOrigin, e.shiftKey);
         draw();
         return;
       }
@@ -2796,15 +2796,28 @@
       let r = Math.max(5, Math.hypot(dx, dy));
       let a = Math.atan2(dy, dx);
       if (e.shiftKey) {
-        // constrain to symmetric 90deg for initial draw
-        a = Math.round(a / (Math.PI / 2)) * (Math.PI / 2);
+        // constrain to 45deg increments
+        a = Math.round(a / (Math.PI / 4)) * (Math.PI / 4);
       }
       state.tempShape.r2 = r;
       state.tempShape.a2 = a;
       state.tempShape.r1 = r;
       state.tempShape.a1 = a - Math.PI / 2;
     } else if (state.tempShape.type === 'line' || state.tempShape.type === 'arrow') {
-      state.tempShape.points[1] = {x: pos.x, y: pos.y};
+      if (e.shiftKey) {
+        const p0 = state.tempShape.points[0];
+        const dx = pos.x - p0.x;
+        const dy = pos.y - p0.y;
+        const dist = Math.hypot(dx, dy);
+        const angle = Math.atan2(dy, dx);
+        const snap = Math.round(angle / (Math.PI / 4)) * (Math.PI / 4);
+        state.tempShape.points[1] = {
+          x: p0.x + dist * Math.cos(snap),
+          y: p0.y + dist * Math.sin(snap)
+        };
+      } else {
+        state.tempShape.points[1] = {x: pos.x, y: pos.y};
+      }
     } else if (state.tempShape.type === 'pen') {
       state.tempShape.points.push(pos);
     }
@@ -3017,7 +3030,7 @@
     return {x, y, w, h};
   }
 
-  function applyResize(s, handle, dx, dy, origin) {
+  function applyResize(s, handle, dx, dy, origin, shiftKey = false) {
     if ((s.angle || 0) !== 0) return;
     if (s.type === 'rect' || s.type === 'mosaic' || s.type === 'circle' || s.type === 'image') {
       let x = origin.x, y = origin.y, w = origin.w, h = origin.h;
@@ -3105,19 +3118,42 @@
         const lx = origin.r1 * Math.cos(origin.a1) + dx;
         const ly = origin.r1 * Math.sin(origin.a1) + dy;
         s.r1 = Math.max(5, Math.hypot(lx, ly));
-        s.a1 = Math.atan2(ly, lx);
+        let a = Math.atan2(ly, lx);
+        if (shiftKey) a = Math.round(a / (Math.PI / 4)) * (Math.PI / 4);
+        s.a1 = a;
       } else if (handle === 'pt-1') {
         const lx = origin.r2 * Math.cos(origin.a2) + dx;
         const ly = origin.r2 * Math.sin(origin.a2) + dy;
         s.r2 = Math.max(5, Math.hypot(lx, ly));
-        s.a2 = Math.atan2(ly, lx);
+        let a = Math.atan2(ly, lx);
+        if (shiftKey) a = Math.round(a / (Math.PI / 4)) * (Math.PI / 4);
+        s.a2 = a;
       }
     } else if ((s.type === 'line' || s.type === 'arrow')) {
       const ptMatch = handle.match(/^pt-(\d+)$/);
       if (ptMatch) {
         const idx = parseInt(ptMatch[1], 10);
         if (origin.points && origin.points[idx]) {
-          s.points[idx] = { ...origin.points[idx], x: origin.points[idx].x + dx, y: origin.points[idx].y + dy };
+          if (shiftKey && !origin.points[idx].cp) {
+            let otherIdx = -1;
+            for (let i = idx - 1; i >= 0; i--) { if (!origin.points[i].cp) { otherIdx = i; break; } }
+            if (otherIdx < 0) {
+              for (let i = idx + 1; i < origin.points.length; i++) { if (!origin.points[i].cp) { otherIdx = i; break; } }
+            }
+            if (otherIdx >= 0) {
+              const other = origin.points[otherIdx];
+              const odx = origin.points[idx].x + dx - other.x;
+              const ody = origin.points[idx].y + dy - other.y;
+              const dist = Math.hypot(odx, ody);
+              const angle = Math.atan2(ody, odx);
+              const snap = Math.round(angle / (Math.PI / 4)) * (Math.PI / 4);
+              s.points[idx] = { ...origin.points[idx], x: other.x + dist * Math.cos(snap), y: other.y + dist * Math.sin(snap) };
+            } else {
+              s.points[idx] = { ...origin.points[idx], x: origin.points[idx].x + dx, y: origin.points[idx].y + dy };
+            }
+          } else {
+            s.points[idx] = { ...origin.points[idx], x: origin.points[idx].x + dx, y: origin.points[idx].y + dy };
+          }
         }
       }
     }

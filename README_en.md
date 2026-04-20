@@ -15,15 +15,15 @@ I’m a STEM beginner who built this entirely through Vibe Coding. There’s no 
 - **Rich Annotation Tools**:
   - Text (double-click to edit inline)
   - Rectangle, Circle, Polygon (configurable sides and regular polygon mode)
-  - Line, Arrow (double-click to add curve control anchors and convert to Bézier curves)
+  - Line, Arrow (double-click to add curve control anchors and convert to Bézier curves; hold Shift to snap to 0°/45°/90°/135°/180°/270°)
   - Freehand pen
   - Mosaic (adjustable blur intensity)
   - Magnifier (circular and strip variants)
-  - Angle marker (auto-calculates and displays the angle value)
+  - Angle marker (auto-calculates and displays the angle value; hold Shift to snap to 0°/45°/90°/135°/180°/270°)
 - **Layer Management**: The layer panel lists all objects and supports drag-to-reorder; items higher in the list are rendered on top of items lower in the list.
 - **Selection Editing**: When an object is selected, the right panel lets you change color, stroke width, font size, fill, dash style, rotation, and more.
 - **Undo / Redo**: Full history support for all operations.
-- **Project Save / Open**: Save the current canvas and all annotations as a `.stukproj` file. When reopened, every annotation remains an independent object that can still be moved, resized, rotated, or edited—something many similar tools (which only export static images) cannot do. Supports overwrite or save-as.
+- **Project Save / Open**: Save the current canvas and all annotations as a `.anno` file. When reopened, every annotation remains an independent object that can still be moved, resized, rotated, or edited—something many similar tools (which only export static images) cannot do. Supports overwrite or save-as. The default file name is `[未命名].anno`; the file name input is auto-selected when the save dialog opens, so you can type a new name immediately.
 - **Marquee Selection & Multi-Selection Batch Operations**: Drag on an empty area to draw a marquee box; all annotations inside are selected in bulk. You can then change color, stroke width, font size, fill, dash style, zoom, mosaic blur, polygon sides / regular mode, angle / font size, etc. for all selected items at once, or drag, duplicate, and delete them as a group.
 - **Duplicate Annotation**: Press `Cmd+C` (or `Ctrl+C`) to duplicate the selected annotation(s).
 - **Proportional Corner Resize**: Dragging any of the four corner handles now scales the shape proportionally.
