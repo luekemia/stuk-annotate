@@ -161,6 +161,11 @@
           <input type="range" id="strokeWidth" min="1" max="40" value="3">
           <div class="range-value" id="strokeValue">3px</div>
         </div>
+        <div class="prop-group">
+          <label>透明度</label>
+          <input type="range" id="globalOpacity" min="0" max="100" value="100">
+          <div class="range-value" id="globalOpacityValue">100%</div>
+        </div>
 
         <div class="divider"></div>
         <div class="panel-title">选中属性</div>
@@ -171,6 +176,11 @@
         <div class="prop-group" id="selColorGroup" style="display:none">
           <label>颜色</label>
           <div class="color-picker" id="selColor"></div>
+        </div>
+        <div class="prop-group" id="selOpacityGroup" style="display:none">
+          <label>透明度</label>
+          <input type="range" id="selOpacity" min="0" max="100" value="100">
+          <div class="range-value" id="selOpacityValue">100%</div>
         </div>
         <div class="prop-group" id="selWidthGroup" style="display:none">
           <label>粗细</label>

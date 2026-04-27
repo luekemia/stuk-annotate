@@ -28,6 +28,8 @@
   const strokeWidthInput = document.getElementById('strokeWidth');
   const strokeValue = document.getElementById('strokeValue');
   const globalColorPicker = document.getElementById('globalColor');
+  const globalOpacityInput = document.getElementById('globalOpacity');
+  const globalOpacityValue = document.getElementById('globalOpacityValue');
 
   // Selection props
   const selGroup = document.getElementById('selGroup');
@@ -49,6 +51,9 @@
   const selDashTypePicker = document.getElementById('selDashType');
   const selDashTightInput = document.getElementById('selDashTight');
   const selDashTightValue = document.getElementById('selDashTightValue');
+  const selOpacityGroup = document.getElementById('selOpacityGroup');
+  const selOpacityInput = document.getElementById('selOpacity');
+  const selOpacityValue = document.getElementById('selOpacityValue');
 
   // Polygon toolbar
   const polygonToolbar = document.getElementById('polygonToolbar');
@@ -122,6 +127,7 @@
     tool: 'select',
     color: '#ff6b35',
     width: 3,
+    opacity: 1,
     defaultZoom: 2,
     recentColor: null,
     selectedId: null,
@@ -633,6 +639,22 @@
     }
   });
 
+  // ===== Global opacity =====
+  globalOpacityInput.addEventListener('input', () => {
+    const v = parseInt(globalOpacityInput.value, 10);
+    state.opacity = v / 100;
+    globalOpacityValue.textContent = v + '%';
+    if (state.selectedIds.length) {
+      recordState();
+      state.selectedIds.forEach(id => {
+        const s = state.shapes.find(x => x.id === id);
+        if (s) s.opacity = state.opacity;
+      });
+      draw();
+      updateSelectionUI();
+    }
+  });
+
   // ===== Selection properties =====
   selWidthInput.addEventListener('input', () => {
     const v = parseInt(selWidthInput.value, 10);
@@ -644,6 +666,19 @@
     draw();
   });
   selWidthInput.addEventListener('change', () => {
+    if (state.selectedIds.length) recordState();
+  });
+
+  selOpacityInput.addEventListener('input', () => {
+    const v = parseInt(selOpacityInput.value, 10);
+    selOpacityValue.textContent = v + '%';
+    state.selectedIds.forEach(id => {
+      const s = state.shapes.find(x => x.id === id);
+      if (s) s.opacity = v / 100;
+    });
+    draw();
+  });
+  selOpacityInput.addEventListener('change', () => {
     if (state.selectedIds.length) recordState();
   });
 
@@ -888,6 +923,7 @@
       selVertexAngleGroup.style.display = 'none';
       selAngleGroup.style.display = 'none';
       selAngleFontGroup.style.display = 'none';
+      selOpacityGroup.style.display = 'none';
       if (state.tool === 'magnifier' || state.tool === 'stripMagnifier') {
         noSelGroup.style.display = 'none';
         zoomGroup.style.display = 'block';
@@ -919,6 +955,13 @@
     buildColorPicker(selColorPicker, commonColor !== undefined ? commonColor : s.color, c => {
       applyToSelection('color', c);
     }, state.recentColor);
+
+    // Opacity
+    selOpacityGroup.style.display = 'block';
+    const commonOpacity = getCommonProp(state.selectedIds, 'opacity');
+    const opacityVal = commonOpacity !== undefined ? commonOpacity : (s.opacity != null ? s.opacity : 1);
+    selOpacityInput.value = Math.round(opacityVal * 100);
+    selOpacityValue.textContent = selOpacityInput.value + '%';
 
     // Width
     const commonWidth = getCommonProp(state.selectedIds, 'width');
@@ -1184,12 +1227,16 @@
     }
   });
 
-  function initProject(img, shapes = [], color = null, width = null, projectName = null) {
+  function initProject(img, shapes = [], color = null, width = null, projectName = null, opacity = null) {
     // Migrate legacy line/arrow data
     shapes.forEach(s => {
       if ((s.type === 'line' || s.type === 'arrow') && !s.points && s.x1 != null) {
         s.points = [{x: s.x1, y: s.y1}, {x: s.x2, y: s.y2}];
       }
+    });
+    // Backfill opacity for legacy projects
+    shapes.forEach(s => {
+      if (s.opacity == null) s.opacity = 1;
     });
     state.bgImage = img;
     state.bgWidth = img.width;
@@ -1206,6 +1253,7 @@
     state.savedVersion = 0;
     if (color != null) state.color = color;
     if (width != null) state.width = width;
+    if (opacity != null) state.opacity = opacity;
     clearMosaicCaches();
     emptyState.classList.add('hidden');
     resizeCanvas();
@@ -1216,6 +1264,8 @@
     buildColorPicker(globalColorPicker, state.color, setGlobalColor, state.recentColor);
     strokeWidthInput.value = state.width;
     strokeValue.textContent = state.width + 'px';
+    globalOpacityInput.value = Math.round(state.opacity * 100);
+    globalOpacityValue.textContent = globalOpacityInput.value + '%';
     blankCanvasBtn.style.display = 'none';
   }
 
@@ -1273,7 +1323,7 @@
       id: uid(), type: 'image',
       x: getRightmostX() + 20, y: 0,
       w: img.width, h: img.height,
-      src: dataURL, angle: 0
+      src: dataURL, angle: 0, opacity: state.opacity
     };
     state.shapes.push(shape);
     state.selectedId = shape.id;
@@ -1400,7 +1450,8 @@
       image: state.bgImage.src,
       shapes: deepCloneShapes(),
       color: state.color,
-      width: state.width
+      width: state.width,
+      opacity: state.opacity
     };
     return new Blob([JSON.stringify(project)], { type: 'application/json' });
   }
@@ -1625,7 +1676,7 @@
         if (!project.image || !Array.isArray(project.shapes)) throw new Error('项目文件格式不正确');
         const img = new Image();
         img.onload = () => {
-          initProject(img, project.shapes, project.color, project.width, fileName);
+          initProject(img, project.shapes, project.color, project.width, fileName, project.opacity);
           state.projectFileHandle = fileHandle;
           const imageSrcs = project.shapes
             .filter(s => s.type === 'image' && s.src)
@@ -1809,6 +1860,8 @@
   }
 
   function drawShape(c, s, isSelected, sourceCanvas = null) {
+    c.save();
+    c.globalAlpha = s.opacity != null ? s.opacity : 1;
     c.strokeStyle = s.color;
     c.fillStyle = s.color;
     c.lineWidth = s.width;
@@ -2142,6 +2195,7 @@
     }
 
     if (hasAngle) c.restore();
+    c.restore();
   }
 
   function drawArrowHead(c, x, y, angle, width) {
@@ -2431,6 +2485,7 @@
         const p2 = {x: pts[(j + 1) % pts.length].x - c.x, y: pts[(j + 1) % pts.length].y - c.y};
         if (distToSegment(lp, p1, p2) <= threshold) return true;
       }
+      if (s.fill && pointInPolygon(lp.x, lp.y, pts.map(p => ({x: p.x - c.x, y: p.y - c.y})))) return true;
       return false;
     } else if (s.type === 'magnifier') {
       return Math.hypot(lp.x, lp.y) <= s.r + 4;
@@ -2493,6 +2548,18 @@
     let t = ((p.x - v.x) * (w.x - v.x) + (p.y - v.y) * (w.y - v.y)) / l2;
     t = Math.max(0, Math.min(1, t));
     return Math.hypot(p.x - (v.x + t * (w.x - v.x)), p.y - (v.y + t * (w.y - v.y)));
+  }
+
+  function pointInPolygon(px, py, points) {
+    let inside = false;
+    for (let i = 0, j = points.length - 1; i < points.length; j = i++) {
+      const xi = points[i].x, yi = points[i].y;
+      const xj = points[j].x, yj = points[j].y;
+      const intersect = ((yi > py) !== (yj > py)) &&
+        (px < (xj - xi) * (py - yi) / (yj - yi) + xi);
+      if (intersect) inside = !inside;
+    }
+    return inside;
   }
 
   function distToQuadraticBezier(p, p0, p1, p2) {
@@ -2622,7 +2689,7 @@
       const text = '双击编辑文字';
       state.tempShape = {
         id: uid(), type: 'text', x: pos.x, y: pos.y,
-        text, color: state.color, width: state.width, angle: 0, fontSize: 10
+        text, color: state.color, width: state.width, opacity: state.opacity, angle: 0, fontSize: 10
       };
       finalizeTempShape();
       updateSelectionUI();
@@ -2632,17 +2699,17 @@
     } else if (state.tool === 'pen') {
       state.tempShape = {
         id: uid(), type: 'pen', points: [pos],
-        color: state.color, width: state.width, angle: 0
+        color: state.color, width: state.width, opacity: state.opacity, angle: 0
       };
     } else if (state.tool === 'rect') {
       state.tempShape = {
         id: uid(), type: 'rect', x: pos.x, y: pos.y, w: 0, h: 0,
-        color: state.color, width: state.width, fill: false, angle: 0
+        color: state.color, width: state.width, fill: false, opacity: state.opacity, angle: 0
       };
     } else if (state.tool === 'circle') {
       state.tempShape = {
         id: uid(), type: 'circle', x: pos.x, y: pos.y, w: 0, h: 0,
-        color: state.color, width: state.width, fill: false, angle: 0
+        color: state.color, width: state.width, fill: false, opacity: state.opacity, angle: 0
       };
     } else if (state.tool === 'polygon') {
       state.tempShape = {
@@ -2650,7 +2717,7 @@
         points: [],
         regular: polyRegularInput.checked,
         sides: parseInt(polySidesInput.value, 10) || 5,
-        color: state.color, width: state.width, fill: false, angle: 0
+        color: state.color, width: state.width, fill: false, opacity: state.opacity, angle: 0
       };
     } else if (state.tool === 'angle') {
       state.tempShape = {
@@ -2658,30 +2725,30 @@
         r1: 0, r2: 0,
         a1: 0, a2: Math.PI / 2,
         color: state.color, width: state.width, fontSize: 20,
-        angle: 0, dashType: 'solid', dashTight: 5
+        opacity: state.opacity, angle: 0, dashType: 'solid', dashTight: 5
       };
     } else if (state.tool === 'mosaic') {
       if (state.isBlankCanvas && state.shapes.length === 0) return;
       state.tempShape = {
         id: uid(), type: 'mosaic', x: pos.x, y: pos.y, w: 0, h: 0,
-        color: state.color, width: state.width, angle: 0, mosaicBlur: 12
+        color: state.color, width: state.width, opacity: state.opacity, angle: 0, mosaicBlur: 12
       };
     } else if (state.tool === 'magnifier') {
       state.tempShape = {
         id: uid(), type: 'magnifier', x: pos.x, y: pos.y, r: 0,
         tx: pos.x, ty: pos.y,
-        color: state.color, width: state.width, angle: 0, zoom: state.defaultZoom
+        color: state.color, width: state.width, opacity: state.opacity, angle: 0, zoom: state.defaultZoom
       };
     } else if (state.tool === 'stripMagnifier') {
       state.tempShape = {
         id: uid(), type: 'stripMagnifier', sx: pos.x, sy: pos.y, sw: 0, sh: 0,
-        color: state.color, width: state.width, angle: 0, zoom: state.defaultZoom
+        color: state.color, width: state.width, opacity: state.opacity, angle: 0, zoom: state.defaultZoom
       };
     } else if (state.tool === 'line' || state.tool === 'arrow') {
       state.tempShape = {
         id: uid(), type: state.tool,
         points: [{x: pos.x, y: pos.y}, {x: pos.x, y: pos.y}],
-        color: state.color, width: state.width, angle: 0
+        color: state.color, width: state.width, opacity: state.opacity, angle: 0
       };
     }
     draw();
